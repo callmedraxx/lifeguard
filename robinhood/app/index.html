@@ -109,7 +109,7 @@ const chain = defineChain({
 });
 const EXPLORER = chain.blockExplorers.default.url;
 // Set at deploy; ?escrow=0x… overrides it for testing.
-const ESCROW = new URLSearchParams(location.search).get("escrow") || "0x0000000000000000000000000000000000000000";
+const ESCROW = new URLSearchParams(location.search).get("escrow") || "0xc13B429326A1ABD34721824e6EFd8Cb8b191A6a7";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const BURN = new Set([ZERO, "0x000000000000000000000000000000000000dead"]);
 const TOKENS = [
