@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lifeguard · Robinhood Chain</title>
+<meta name="description" content="An undo button for payments on Robinhood Chain. Send with an undo window; take it back if you got it wrong.">
+<style>
+  :root {
+    --bg: #0b0d0c; --panel: #131715; --line: #232a26; --text: #e9efe9; --muted: #93a197; --faint: #5f6b63;
+    --accent: #c8ff3d; --accent-ink: #0b0d0c; --warn: #ffb547; --bad: #ff5b5b; --good: #4ade80;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+  .brand { font-weight: 800; letter-spacing: -.02em; font-size: 20px; }
+  .brand i { color: var(--accent); font-style: normal; }
+  .net { font: 12px var(--mono); color: var(--muted); }
+  h1 { font-size: clamp(26px, 6vw, 38px); line-height: 1.1; letter-spacing: -.03em; margin: 0 0 10px; }
+  .lede { color: var(--muted); margin: 0 0 28px; max-width: 56ch; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 12px 0 6px; }
+  input, select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 12px; font: 14px var(--mono); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 540px) { .row { grid-template-columns: 1fr; } }
+  button { cursor: pointer; border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 700; font-size: 14px; }
+  .primary { background: var(--accent); color: var(--accent-ink); }
+  .primary[disabled] { opacity: .4; cursor: not-allowed; }
+  .ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .small { padding: 7px 11px; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--bg); border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .chip[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+  .checks { list-style: none; padding: 0; margin: 14px 0 0; }
+  .checks li { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; }
+  .checks .ok { background: rgba(74,222,128,.08); color: var(--good); }
+  .checks .warn { background: rgba(255,181,71,.1); color: var(--warn); }
+  .checks .block { background: rgba(255,91,91,.1); color: var(--bad); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  .status { font-size: 13px; color: var(--muted); }
+  .pay { border-top: 1px solid var(--line); padding: 12px 0; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .pay:first-child { border-top: 0; }
+  .pay b { font-family: var(--mono); }
+  .meta { font-size: 12.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; }
+  .tag.live { color: var(--accent); border-color: var(--accent); }
+  .empty { color: var(--faint); font-size: 14px; padding: 8px 0; }
+  a { color: var(--accent); }
+  footer { color: var(--faint); font-size: 12.5px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand">Life<i>guard</i></span>
+    <span class="net" id="net">not connected</span>
+    <button class="ghost small" id="connect">Connect wallet</button>
+  </header>
+
+  <h1>An undo button for payments on Robinhood Chain.</h1>
+  <p class="lede">Send ETH or stock tokens with an undo window. Wrong address? Wrong amount? Changed your mind? Take it all
+    back before the window ends. The recipient can also refuse a payment they weren't expecting.</p>
+
+  <section class="card">
+    <label for="token">What are you sending?</label>
+    <select id="token"></select>
+    <input id="customToken" placeholder="Token address (0x…)" style="display:none;margin-top:8px">
+    <div class="row">
+      <div><label for="to">To</label><input id="to" placeholder="0x…" autocomplete="off"></div>
+      <div><label for="amount">Amount <span id="bal"></span></label><input id="amount" placeholder="0.0" inputmode="decimal"></div>
+    </div>
+    <label>Undo window</label>
+    <div class="chips" id="windows"></div>
+    <label for="arbiter">Arbiter (optional): a neutral person both sides trust. If set, only they can undo.</label>
+    <input id="arbiter" placeholder="0x… (leave empty for none)">
+    <ul class="checks" id="checks"></ul>
+    <div class="actions">
+      <button class="primary" id="send" disabled>Send with undo</button>
+      <span class="status" id="sendStatus"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong>Your payments</strong>
+      <button class="ghost small" id="refresh">Refresh</button>
+    </div>
+    <div id="payments"><div class="empty">Connect your wallet to see payments you sent or received.</div></div>
+  </section>
+
+  <footer>Testnet only. Contract <span id="escrowAddr" class="meta"></span>. No owner, no fees: only the people in a
+    payment can move its money. Built by <a href="https://x.com/callmedraxxx">@callmedraxxx</a>.</footer>
+</div>
+
+<script type="module">
+import {
+  createPublicClient, createWalletClient, custom, http, parseUnits, formatUnits, isAddress, getAddress, defineChain,
+  erc20Abi, maxUint256,
+} from "https://esm.sh/viem@2.21.55";
+
+const chain = defineChain({
+  id: 46630, name: "Robinhood Chain Testnet", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com/rpc"] } },
+  blockExplorers: { default: { name: "Explorer", url: "https://explorer.testnet.chain.robinhood.com" } },
+});
+const EXPLORER = chain.blockExplorers.default.url;
+// Set at deploy; ?escrow=0x… overrides it for testing.
+const ESCROW = new URLSearchParams(location.search).get("escrow") || "0x0000000000000000000000000000000000000000";
+const ZERO = "0x0000000000000000000000000000000000000000";
+const BURN = new Set([ZERO, "0x000000000000000000000000000000000000dead"]);
+const TOKENS = [
+  { symbol: "ETH", address: ZERO, decimals: 18 },
+  { symbol: "TSLA", address: "0xC9f9c86933092BbbfFF3CCb4b105A4A94bf3Bd4E", decimals: 18 },
+  { symbol: "AMZN", address: "0x5884aD2f920c162CFBbACc88C9C51AA75eC09E02", decimals: 18 },
+  { symbol: "PLTR", address: "0x1FBE1a0e43594b3455993B5dE5Fd0A7A266298d0", decimals: 18 },
+  { symbol: "NFLX", address: "0x3b8262A63d25f0477c4DDE23F83cfe22Cb768C93", decimals: 18 },
+  { symbol: "AMD", address: "0x71178BAc73cBeb415514eB542a8995b82669778d", decimals: 18 },
+];
+const WINDOWS = [["10 min", 600], ["1 hour", 3600], ["24 hours", 86400], ["7 days", 604800]];
+const STATUS = ["", "pending", "delivered", "undone", "refused"];
+const escrowAbi = [
+  { type: "function", name: "send", stateMutability: "payable", inputs: [
+    { name: "token", type: "address" }, { name: "recipient", type: "address" }, { name: "amount", type: "uint256" },
+    { name: "window", type: "uint64" }, { name: "arbiter", type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "undo", stateMutability: "nonpayable", inputs: [{ name: "id", type: "uint256" }], outputs: [] },
+  { type: "function", name: "refuse", stateMutability: "nonpayable", inputs: [{ name: "id", type: "uint256" }], outputs: [] },
+  { type: "function", name: "release", stateMutability: "nonpayable", inputs: [{ name: "id", type: "uint256" }], outputs: [] },
+  { type: "function", name: "paymentsOf", stateMutability: "view", inputs: [{ name: "who", type: "address" }],
+    outputs: [{ name: "sent", type: "uint256[]" }, { name: "received", type: "uint256[]" }] },
+  { type: "function", name: "payment", stateMutability: "view", inputs: [{ name: "id", type: "uint256" }],
+    outputs: [{ type: "tuple", components: [
+      { name: "payer", type: "address" }, { name: "recipient", type: "address" }, { name: "token", type: "address" },
+      { name: "arbiter", type: "address" }, { name: "amount", type: "uint128" }, { name: "releaseAt", type: "uint64" },
+      { name: "status", type: "uint8" }] }] },
+];
+
+const $ = id => document.getElementById(id);
+const pub = createPublicClient({ chain, transport: http() });
+let wallet = null, account = null, windowS = 3600, checkSeq = 0;
+
+$("escrowAddr").innerHTML = `<a href="${EXPLORER}/address/${ESCROW}" target="_blank" rel="noopener">${ESCROW.slice(0, 10)}…</a>`;
+for (const t of TOKENS) $("token").add(new Option(t.symbol, t.address));
+$("token").add(new Option("Other token…", "custom"));
+for (const [label, s] of WINDOWS) {
+  const b = Object.assign(document.createElement("button"), { className: "chip", textContent: label, type: "button" });
+  b.setAttribute("aria-pressed", s === windowS);
+  b.onclick = () => { windowS = s; [...$("windows").children].forEach(c => c.setAttribute("aria-pressed", c === b)); };
+  $("windows").append(b);
+}
+
+const short = a => a.slice(0, 6) + "…" + a.slice(-4);
+const tokenAddr = () => $("token").value === "custom" ? $("customToken").value.trim() : $("token").value;
+async function tokenInfo(addr) {
+  const known = TOKENS.find(t => t.address.toLowerCase() === addr.toLowerCase());
+  if (known) return known;
+  const [symbol, decimals] = await Promise.all([
+    pub.readContract({ address: addr, abi: erc20Abi, functionName: "symbol" }),
+    pub.readContract({ address: addr, abi: erc20Abi, functionName: "decimals" }),
+  ]);
+  return { symbol, address: addr, decimals };
+}
+
+/** The same mistakes the PayBox Lifeguard catches, read live from the chain before anything is signed. */
+async function runChecks() {
+  const seq = ++checkSeq, out = [];
+  const add = (level, msg) => out.push([level, msg]);
+  const to = $("to").value.trim(), amt = $("amount").value.trim(), arb = $("arbiter").value.trim();
+  const tAddr = tokenAddr();
+  let ok = !!account;
+  if (!account) add("warn", "Connect your wallet to send.");
+  try {
+    if (!isAddress(tAddr)) throw new Error("Pick a token, or paste a valid token address.");
+    const t = await tokenInfo(tAddr);
+    if (account) {
+      const bal = t.address === ZERO ? await pub.getBalance({ address: account })
+        : await pub.readContract({ address: t.address, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+      $("bal").textContent = `(you have ${(+formatUnits(bal, t.decimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${t.symbol})`;
+      if (amt && parseUnits(amt, t.decimals) > bal) { add("block", `You only hold ${formatUnits(bal, t.decimals)} ${t.symbol}.`); ok = false; }
+    }
+    if (!to) { ok = false; }
+    else if (!isAddress(to)) { add("block", "That recipient isn't a valid address. Check you copied all of it."); ok = false; }
+    else {
+      const r = to.toLowerCase();
+      if (BURN.has(r)) { add("block", "That's a burn address: anything sent there is gone for good."); ok = false; }
+      else if (r === ESCROW.toLowerCase()) { add("block", "That's the Lifeguard contract itself."); ok = false; }
+      else if (account && r === account.toLowerCase()) { add("block", "That's your own address."); ok = false; }
+      else if (t.address !== ZERO && r === t.address.toLowerCase()) {
+        add("block", `That's the ${t.symbol} token contract. Tokens sent to their own contract are lost: the classic $50M mistake.`); ok = false;
+      } else {
+        const [code, nonce, ethBal] = await Promise.all([pub.getCode({ address: to }), pub.getTransactionCount({ address: to }),
+          pub.getBalance({ address: to })]);
+        if (code && code !== "0x") {
+          const isToken = await pub.readContract({ address: to, abi: erc20Abi, functionName: "decimals" }).then(() => true, () => false);
+          if (isToken) { add("block", "That address is a token contract, not a person. Tokens sent there are almost always lost."); ok = false; }
+          else add("warn", "That's a smart contract, not a wallet. Make sure it's meant to receive this.");
+        } else if (nonce === 0 && ethBal === 0n) add("warn", "That address has never been used on this chain. Double-check every character.");
+        else add("ok", `Recipient ${short(getAddress(to))} is an active wallet.`);
+      }
+    }
+    if (arb && !isAddress(arb)) { add("block", "The arbiter isn't a valid address."); ok = false; }
+    if (arb && isAddress(to) && arb.toLowerCase() === to.toLowerCase()) { add("block", "The arbiter can't be the recipient."); ok = false; }
+    if (!amt || !(+amt > 0)) ok = false;
+  } catch (e) { add("block", e.shortMessage || e.message); ok = false; }
+  if (ESCROW === ZERO) { add("warn", "The Lifeguard contract isn't deployed yet."); ok = false; }
+  if (seq !== checkSeq) return;
+  $("checks").innerHTML = out.map(([l, m]) => `<li class="${l}">${m}</li>`).join("");
+  $("send").disabled = !ok;
+}
+
+async function connect() {
+  if (!window.ethereum) { alert("Install a wallet such as Rabby or MetaMask first."); return; }
+  wallet = createWalletClient({ chain, transport: custom(window.ethereum) });
+  [account] = await wallet.requestAddresses();
+  try { await wallet.switchChain({ id: chain.id }); }
+  catch { await wallet.addChain({ chain }); await wallet.switchChain({ id: chain.id }); }
+  $("net").textContent = `${short(account)} · Robinhood testnet`;
+  $("connect").textContent = "Connected";
+  runChecks(); loadPayments();
+}
+
+async function send() {
+  const btn = $("send"); btn.disabled = true;
+  const say = m => $("sendStatus").textContent = m;
+  try {
+    const t = await tokenInfo(tokenAddr());
+    const amount = parseUnits($("amount").value.trim(), t.decimals);
+    const to = getAddress($("to").value.trim());
+    const arbiter = $("arbiter").value.trim() ? getAddress($("arbiter").value.trim()) : ZERO;
+    if (t.address !== ZERO) {
+      const allowance = await pub.readContract({ address: t.address, abi: erc20Abi, functionName: "allowance", args: [account, ESCROW] });
+      if (allowance < amount) {
+        say(`Step 1 of 2: allow Lifeguard to hold ${t.symbol}…`);
+        const h = await wallet.writeContract({ account, address: t.address, abi: erc20Abi, functionName: "approve", args: [ESCROW, amount] });
+        await pub.waitForTransactionReceipt({ hash: h });
+      }
+    }
+    say("Sending with undo…");
+    const hash = await wallet.writeContract({ account, address: ESCROW, abi: escrowAbi, functionName: "send",
+      args: [t.address, to, amount, BigInt(windowS), arbiter], value: t.address === ZERO ? amount : 0n });
+    await pub.waitForTransactionReceipt({ hash });
+    $("sendStatus").innerHTML = `Sent. You can undo it below until the window ends. <a href="${EXPLORER}/tx/${hash}" target="_blank" rel="noopener">View</a>`;
+    $("amount").value = "";
+    loadPayments();
+  } catch (e) { say(e.shortMessage || e.message); }
+  finally { runChecks(); }
+}
+
+async function act(fn, id) {
+  try {
+    const hash = await wallet.writeContract({ account, address: ESCROW, abi: escrowAbi, functionName: fn, args: [BigInt(id)] });
+    await pub.waitForTransactionReceipt({ hash });
+    loadPayments();
+  } catch (e) { alert(e.shortMessage || e.message); }
+}
+window.lg = { act };
+
+function left(s) {
+  if (s <= 0) return "window ended";
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h left` : h ? `${h}h ${m}m left` : `${m}m ${s % 60}s left`;
+}
+
+async function loadPayments() {
+  if (!account || ESCROW === ZERO) return;
+  const [sent, received] = await pub.readContract({ address: ESCROW, abi: escrowAbi, functionName: "paymentsOf", args: [account] });
+  const ids = [...new Set([...sent, ...received].map(Number))].sort((a, b) => b - a).slice(0, 30);
+  if (!ids.length) { $("payments").innerHTML = `<div class="empty">No payments yet.</div>`; return; }
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await Promise.all(ids.map(async id => {
+    const p = await pub.readContract({ address: ESCROW, abi: escrowAbi, functionName: "payment", args: [BigInt(id)] });
+    const t = await tokenInfo(p.token).catch(() => ({ symbol: "?", decimals: 18 }));
+    const mine = p.payer.toLowerCase() === account.toLowerCase();
+    const judge = p.arbiter.toLowerCase() === account.toLowerCase();
+    const pending = p.status === 1, open = pending && now < Number(p.releaseAt);
+    const btns = [];
+    if (open && ((mine && p.arbiter === ZERO) || judge)) btns.push(`<button class="primary small" onclick="lg.act('undo',${id})">Undo</button>`);
+    if (pending && !mine && p.recipient.toLowerCase() === account.toLowerCase()) btns.push(`<button class="ghost small" onclick="lg.act('refuse',${id})">Refuse</button>`);
+    if (pending && (!open || mine || judge)) btns.push(`<button class="ghost small" onclick="lg.act('release',${id})">${open ? "Deliver now" : "Deliver"}</button>`);
+    return `<div class="pay"><div>
+        <b>${formatUnits(p.amount, t.decimals)} ${t.symbol}</b> ${mine ? "to" : "from"} <span class="meta">${short(mine ? p.recipient : p.payer)}</span>
+        <span class="tag ${pending ? "live" : ""}">${pending ? left(Number(p.releaseAt) - now) : STATUS[p.status]}</span>
+        <div class="meta">#${id}${p.arbiter !== ZERO ? ` · arbiter ${short(p.arbiter)}` : ""}</div>
+      </div><div class="actions" style="margin:0">${btns.join("")}</div></div>`;
+  }));
+  $("payments").innerHTML = rows.join("");
+}
+
+$("connect").onclick = connect;
+$("send").onclick = send;
+$("refresh").onclick = loadPayments;
+$("token").onchange = () => { $("customToken").style.display = $("token").value === "custom" ? "block" : "none"; runChecks(); };
+for (const id of ["to", "amount", "arbiter", "customToken"]) $(id).addEventListener("input", () => runChecks());
+setInterval(loadPayments, 20000);
+runChecks();
+</script>
+</body>
+</html>
